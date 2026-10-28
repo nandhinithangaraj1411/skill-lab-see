@@ -14,3 +14,6 @@ export const PRIORITIES = [
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
 ]
+
+// Views reachable from the sidebar (also used as URL hashes)
+export const VIEWS = ['overview', 'board', 'focus', 'stats']

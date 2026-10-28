@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Sidebar from './components/Sidebar'
-import StatsCards from './components/StatsCards'
 import Board from './components/Board'
 import TaskModal from './components/TaskModal'
+import Overview from './components/Overview'
+import FocusChamber from './components/FocusChamber'
+import StatsView from './components/StatsView'
 import { PlusIcon, RefreshIcon } from './components/Icons'
+import { usePomodoro } from './usePomodoro'
+import { byUrgency, computeTaskStats, isActive } from './utils'
+import { VIEWS } from './constants'
+
+const VIEW_COPY = {
+  overview: { title: 'Overview', subtitle: 'Your day at a glance. Pick one thing and lock in.' },
+  board: { title: 'Kanban Board', subtitle: 'Plan, track and finish your work — all on one board.' },
+  focus: { title: 'Focus Chamber', subtitle: 'One task. 25 minutes. Everything else can wait.' },
+  stats: { title: 'Productivity Stats', subtitle: 'Your output, measured from real tasks and focus sessions.' },
+}
+
+// The current view lives in the URL hash so back/forward and reloads work
+function viewFromHash() {
+  const hash = window.location.hash.replace('#', '')
+  return VIEWS.includes(hash) ? hash : 'overview'
+}
 
 export default function App() {
   const [tasks, setTasks] = useState([])
@@ -12,6 +30,8 @@ export default function App() {
   const [loadError, setLoadError] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [modal, setModal] = useState(null) // { task: null } = create, { task } = edit
+  const [view, setView] = useState(viewFromHash)
+  const pomodoro = usePomodoro()
 
   // Track tasks with a request in flight. The ref gives a synchronous guard
   // against double clicks; the state copy drives the disabled UI.
@@ -33,6 +53,18 @@ export default function App() {
   useEffect(() => {
     loadTasks()
   }, [loadTasks])
+
+  useEffect(() => {
+    const onHashChange = () => setView(viewFromHash())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const navigate = useCallback((next) => {
+    setView(next)
+    if (window.location.hash !== `#${next}`) window.location.hash = next
+    window.scrollTo({ top: 0 })
+  }, [])
 
   // Re-fetch after a successful mutation so the UI always reflects the database
   const refreshTasks = useCallback(async () => {
@@ -83,31 +115,99 @@ export default function App() {
   const openEdit = (task) => setModal({ task })
   const closeModal = useCallback(() => setModal(null), [])
 
-  const { counts, total, completionRate } = useMemo(() => {
-    const counts = { todo: 0, 'in-progress': 0, completed: 0 }
-    for (const t of tasks) counts[t.status] = (counts[t.status] || 0) + 1
-    const total = tasks.length
-    const completionRate = total ? Math.round((counts.completed / total) * 100) : 0
-    return { counts, total, completionRate }
-  }, [tasks])
+  const stats = useMemo(() => computeTaskStats(tasks, pomodoro.sessions), [tasks, pomodoro.sessions])
+  const activeTasks = useMemo(() => tasks.filter(isActive).sort(byUrgency), [tasks])
+  const upNext = activeTasks.slice(0, 5)
+
+  // Lock in on the selected task if it is still open, otherwise the most urgent one
+  const currentFocus = activeTasks.find((t) => t._id === pomodoro.timer.taskId)
+  const lockInTask = currentFocus || activeTasks[0] || null
+
+  // Selecting a task never starts the timer: the user presses Start in the chamber
+  function focusOnTask(task) {
+    const { timer } = pomodoro
+    if (timer.status === 'running' && timer.taskId !== task._id) {
+      const ok = window.confirm(
+        `A focus session is running${timer.taskTitle ? ` on "${timer.taskTitle}"` : ''}. Switch it to "${task.title}"?`
+      )
+      if (!ok) return navigate('focus')
+    }
+    pomodoro.selectTask(task)
+    if (timer.status !== 'running' && timer.mode !== 'focus') pomodoro.setMode('focus')
+    navigate('focus')
+  }
+
+  function lockIn() {
+    if (lockInTask && pomodoro.timer.status !== 'running') {
+      pomodoro.selectTask(lockInTask)
+      if (pomodoro.timer.mode !== 'focus') pomodoro.setMode('focus')
+    }
+    navigate('focus')
+  }
 
   const showInitialLoading = loading && tasks.length === 0 && !loadError
+  // The timer works without the API, so the Focus Chamber stays usable on load errors
+  const blockedByError = loadError && view !== 'focus'
+  const copy = VIEW_COPY[view]
+
+  function renderView() {
+    switch (view) {
+      case 'board':
+        return (
+          <Board
+            tasks={tasks}
+            busyIds={busyIds}
+            focusTaskId={pomodoro.timer.status !== 'idle' ? pomodoro.timer.taskId : null}
+            onMove={handleMove}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            onAdd={openCreate}
+            onFocus={focusOnTask}
+          />
+        )
+      case 'focus':
+        return (
+          <FocusChamber
+            pomodoro={pomodoro}
+            tasks={tasks}
+            activeTasks={activeTasks}
+            busyIds={busyIds}
+            onCompleteTask={(task) => handleMove(task, 'completed')}
+          />
+        )
+      case 'stats':
+        return <StatsView tasks={tasks} sessions={pomodoro.sessions} stats={stats} />
+      default:
+        return (
+          <Overview
+            tasks={tasks}
+            upNext={upNext}
+            lockInTask={lockInTask}
+            stats={stats}
+            sessions={pomodoro.sessions}
+            onLockIn={lockIn}
+            onFocus={focusOnTask}
+            onNavigate={navigate}
+          />
+        )
+    }
+  }
 
   return (
     <div className="app">
-      <Sidebar counts={counts} total={total} />
+      <Sidebar view={view} onNavigate={navigate} stats={stats} pomodoro={pomodoro} />
 
       <main className="main">
         <header className="page-header">
           <div>
-            <h1>My Workspace</h1>
-            <p className="subtitle">Plan, track and finish your work — all on one board.</p>
+            <h1>{copy.title}</h1>
+            <p className="subtitle">{copy.subtitle}</p>
           </div>
           <div className="header-actions">
-            <button className="btn btn-ghost" onClick={loadTasks} disabled={loading} title="Reload tasks">
+            <button className="btn btn-ghost" onClick={loadTasks} disabled={loading} title="Reload tasks" aria-label="Reload tasks">
               <RefreshIcon className={loading ? 'spin' : undefined} /> Refresh
             </button>
-            <button className="btn btn-primary" onClick={openCreate}>
+            <button className="btn btn-primary" onClick={openCreate} aria-label="Add a new task">
               <PlusIcon /> Add Task
             </button>
           </div>
@@ -116,16 +216,23 @@ export default function App() {
         {actionError && (
           <div className="alert" role="alert">
             <span>{actionError}</span>
-            <button className="alert-close" onClick={() => setActionError(null)} aria-label="Dismiss">×</button>
+            <button className="alert-close" onClick={() => setActionError(null)} aria-label="Dismiss error">×</button>
           </div>
         )}
 
-        {showInitialLoading ? (
+        {loadError && view === 'focus' && (
+          <div className="alert" role="alert">
+            <span>Couldn’t load tasks: {loadError} The timer still works.</span>
+            <button className="alert-close" onClick={loadTasks} aria-label="Retry loading tasks">↻</button>
+          </div>
+        )}
+
+        {showInitialLoading && view !== 'focus' ? (
           <div className="state-panel">
             <div className="spinner" />
             <p>Loading your tasks…</p>
           </div>
-        ) : loadError ? (
+        ) : blockedByError ? (
           <div className="state-panel error">
             <p className="state-title">Couldn’t load tasks</p>
             <p>{loadError}</p>
@@ -134,17 +241,9 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <>
-            <StatsCards total={total} counts={counts} completionRate={completionRate} />
-            <Board
-              tasks={tasks}
-              busyIds={busyIds}
-              onMove={handleMove}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onAdd={openCreate}
-            />
-          </>
+          <div className="view" key={view}>
+            {renderView()}
+          </div>
         )}
       </main>
 

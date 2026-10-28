@@ -31,6 +31,18 @@ const taskSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Optional time estimate in minutes
+    estimatedMinutes: {
+      type: Number,
+      min: [1, 'Estimate must be at least 1 minute'],
+      max: [1440, 'Estimate must be at most 1440 minutes'],
+      default: null,
+    },
+    // Set by the API whenever status changes to/from "completed"
+    completedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

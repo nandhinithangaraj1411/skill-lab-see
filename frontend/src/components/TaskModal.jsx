@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PRIORITIES } from '../constants'
 
-const EMPTY_FORM = { title: '', description: '', priority: 'medium', dueDate: '' }
+const EMPTY_FORM = { title: '', description: '', priority: 'medium', dueDate: '', estimatedMinutes: '' }
 
 // Used for both creating and editing. `task` is null when creating.
 export default function TaskModal({ task, onSubmit, onClose }) {
@@ -13,6 +13,7 @@ export default function TaskModal({ task, onSubmit, onClose }) {
           description: task.description || '',
           priority: task.priority,
           dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
+          estimatedMinutes: task.estimatedMinutes ? String(task.estimatedMinutes) : '',
         }
       : EMPTY_FORM
   )
@@ -38,6 +39,11 @@ export default function TaskModal({ task, onSubmit, onClose }) {
       setError('Title is required.')
       return
     }
+    const estimate = form.estimatedMinutes === '' ? null : Number(form.estimatedMinutes)
+    if (estimate !== null && (!Number.isInteger(estimate) || estimate < 1 || estimate > 1440)) {
+      setError('Estimate must be a whole number of minutes between 1 and 1440.')
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -46,6 +52,7 @@ export default function TaskModal({ task, onSubmit, onClose }) {
         description: form.description.trim(),
         priority: form.priority,
         dueDate: form.dueDate || null,
+        estimatedMinutes: estimate,
       })
       // Parent closes the modal on success
     } catch (err) {
@@ -102,6 +109,20 @@ export default function TaskModal({ task, onSubmit, onClose }) {
               <input type="date" value={form.dueDate} onChange={update('dueDate')} />
             </label>
           </div>
+
+          <label className="field">
+            <span>Estimated duration <small>(minutes, optional)</small></span>
+            <input
+              type="number"
+              min={1}
+              max={1440}
+              step={1}
+              inputMode="numeric"
+              value={form.estimatedMinutes}
+              onChange={update('estimatedMinutes')}
+              placeholder="e.g. 50 (two focus sessions)"
+            />
+          </label>
 
           {error && <p className="form-error" role="alert">{error}</p>}
 

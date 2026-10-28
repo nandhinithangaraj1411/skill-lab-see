@@ -4,7 +4,7 @@ import { Task } from '../models/Task.js';
 
 const router = Router();
 
-const EDITABLE_FIELDS = ['title', 'description', 'status', 'priority', 'dueDate'];
+const EDITABLE_FIELDS = ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes'];
 
 // Keep only fields clients are allowed to set (ignores _id, createdAt, etc.)
 function pickEditable(body = {}) {
@@ -14,6 +14,11 @@ function pickEditable(body = {}) {
   }
   // Treat empty string as "no due date"
   if (data.dueDate === '') data.dueDate = null;
+  if (data.estimatedMinutes === '') data.estimatedMinutes = null;
+  // Record when a task was completed (powers "completed today" stats)
+  if (data.status !== undefined) {
+    data.completedAt = data.status === 'completed' ? new Date() : null;
+  }
   return data;
 }
 

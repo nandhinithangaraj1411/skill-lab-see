@@ -2,7 +2,7 @@ import { COLUMNS } from '../constants'
 import TaskCard from './TaskCard'
 import { PlusIcon } from './Icons'
 
-export default function Board({ tasks, busyIds, onMove, onEdit, onDelete, onAdd }) {
+export default function Board({ tasks, busyIds, focusTaskId, onMove, onEdit, onDelete, onAdd, onFocus }) {
   return (
     <section className="board" id="board" aria-label="Kanban board">
       {COLUMNS.map((col) => {
@@ -31,9 +31,11 @@ export default function Board({ tasks, busyIds, onMove, onEdit, onDelete, onAdd 
                     key={task._id}
                     task={task}
                     busy={busyIds.has(task._id)}
+                    focused={task._id === focusTaskId}
                     onMove={onMove}
                     onEdit={onEdit}
                     onDelete={onDelete}
+                    onFocus={onFocus}
                   />
                 ))
               )}
